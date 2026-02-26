@@ -23,7 +23,7 @@ Ensure you have Python 3.8+ installed. The required packages are listed in `requ
 1.  Clone this repository.
 2.  Navigate to the project directory:
     ```bash
-    cd WhDS_Demo
+    cd micro-blog-api
     ```
 3.  (Optional but recommended) Create and activate a virtual environment.
 4.  Install the dependencies:
