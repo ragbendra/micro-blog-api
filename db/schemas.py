@@ -1,25 +1,45 @@
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr, Field
+
 
 class UserBase(BaseModel):
-    name: str
-    email: str = None
+    name: str = Field(min_length=1)
+    email: EmailStr
+
 
 class PostBase(BaseModel):
-    title: str
-    content: str
+    title: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=500)
+
 
 class UserCreate(UserBase):
-    pass
+    password: str = Field(min_length=6)
+    model_config = {"from_attributes": True}
+
 
 class PostCreate(PostBase):
-    pass
+    model_config = {"from_attributes": True}
 
-class Post(PostBase): # Response Schema
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    expires_at: datetime
+
+
+class Post(PostBase):
     id: int
     author_id: int
     model_config = {"from_attributes": True}
 
-class User(UserBase): # Response Schema
+
+class User(UserBase):
     id: int
-    posts: list[Post] = []
+    posts: list[Post] = Field(default_factory=list)
     model_config = {"from_attributes": True}
