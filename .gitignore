@@ -2,6 +2,9 @@
 test.db
 *.db
 *.sqlite3
+test_test.db
+test.db
+blog.db
 
 # Python cache
 __pycache__/
