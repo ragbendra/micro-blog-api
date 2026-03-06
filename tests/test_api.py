@@ -1,11 +1,14 @@
 import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from core.security import ALGORITHM, SECRET_KEY
 from db.database import Base
 from main import app, get_db
 
@@ -103,7 +106,7 @@ def test_login_returns_bearer_token(client: TestClient):
     data = response.json()
     assert data["token_type"] == "bearer"
     assert data["access_token"]
-    assert data["expires_at"]
+    assert set(data.keys()) == {"access_token", "token_type"}
 
 
 def test_login_rejects_wrong_password(client: TestClient):
@@ -169,3 +172,23 @@ def test_list_users_and_posts(client: TestClient):
     assert posts_response.status_code == 200
     assert len(users_response.json()) == 1
     assert len(posts_response.json()) == 1
+
+
+def test_expired_token_is_rejected(client: TestClient):
+    user_id = register_user(client, name="Ivy", email="ivy@example.com").json()["id"]
+    expired_token = jwt.encode(
+        {
+            "sub": "ivy@example.com",
+            "exp": datetime.now(timezone.utc) - timedelta(seconds=1),
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+
+    response = client.post(
+        f"/users/{user_id}/posts",
+        json={"title": "Expired", "content": "Token should fail"},
+        headers=auth_headers(expired_token),
+    )
+
+    assert response.status_code == 401

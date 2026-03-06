@@ -1,31 +1,18 @@
-import hashlib
-import hmac
-import secrets
-from datetime import datetime, timedelta, timezone
-
 from fastapi import HTTPException
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 
-TOKEN_LIFETIME_HOURS = 24
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    derived_key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-    return f"{salt.hex()}:{derived_key.hex()}"
+    return pwd_context.hash(password)
 
 
-def verify_password(password: str, stored_password_hash: str) -> bool:
-    try:
-        salt_hex, expected_hash = stored_password_hash.split(":", maxsplit=1)
-    except ValueError:
-        return False
-
-    salt = bytes.fromhex(salt_hex)
-    actual_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000).hex()
-    return hmac.compare_digest(actual_hash, expected_hash)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def create_user(db: Session, user: schemas.UserCreate):
@@ -66,35 +53,6 @@ def authenticate_user(db: Session, email: str, password: str):
     if not verify_password(password, user.password_hash):
         return None
     return user
-
-
-def create_auth_token(db: Session, user: models.User):
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=TOKEN_LIFETIME_HOURS)
-    auth_token = models.AuthToken(
-        token=secrets.token_urlsafe(32),
-        expires_at=expires_at,
-        user_id=user.id,
-    )
-    db.add(auth_token)
-    db.commit()
-    db.refresh(auth_token)
-    return auth_token
-
-
-def get_user_by_token(db: Session, token: str):
-    auth_token = db.query(models.AuthToken).filter(models.AuthToken.token == token).first()
-    if auth_token is None:
-        return None
-
-    expires_at = auth_token.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at <= datetime.now(timezone.utc):
-        db.delete(auth_token)
-        db.commit()
-        return None
-
-    return auth_token.user
 
 
 def create_user_post(db: Session, post: schemas.PostCreate, user_id: int):

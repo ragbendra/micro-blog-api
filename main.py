@@ -1,6 +1,8 @@
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from core.security import create_access_token, decode_access_token
 from db import crud, schemas
 from db.database import SessionLocal, engine
 from db.models import Base, User
@@ -8,6 +10,7 @@ from db.models import Base, User
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def get_db():
@@ -18,30 +21,13 @@ def get_db():
         db.close()
 
 
-def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
-    if authorization is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return token
-
-
-def get_current_user(token: str = Depends(get_bearer_token), db: Session = Depends(get_db)) -> User:
-    user = crud.get_user_by_token(db, token)
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    email = decode_access_token(token)
+    user = crud.get_user_by_email(db, email)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
@@ -62,11 +48,9 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    auth_token = crud.create_auth_token(db, user)
     return {
-        "access_token": auth_token.token,
+        "access_token": create_access_token({"sub": user.email}),
         "token_type": "bearer",
-        "expires_at": auth_token.expires_at,
     }
 
 
