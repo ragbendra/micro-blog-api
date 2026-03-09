@@ -34,7 +34,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
-
+.blogvevn/
 # IDEs
 .vscode/
 .idea/
