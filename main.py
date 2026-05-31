@@ -1,5 +1,9 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from core.security import create_access_token, decode_access_token
@@ -9,8 +13,49 @@ from db.models import Base, User
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def _seed_demo_user():
+    """Create a demo user on startup if DEMO_USER_EMAIL and DEMO_USER_PASS are set."""
+    demo_email = os.environ.get("DEMO_USER_EMAIL")
+    demo_pass = os.environ.get("DEMO_USER_PASS")
+    if not demo_email or not demo_pass:
+        return
+
+    db = SessionLocal()
+    try:
+        existing = crud.get_user_by_email(db, demo_email)
+        if existing is None:
+            demo_user = schemas.UserCreate(
+                name="Demo User",
+                email=demo_email,
+                password=demo_pass,
+            )
+            crud.create_user(db=db, user=demo_user)
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    _seed_demo_user()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://raghabendra.dev",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 def get_db():
@@ -33,13 +78,36 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
+
+
+
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return crud.create_user(db=db, user=user)
 
 
+@app.post("/token", response_model=schemas.Token)
+def login_for_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """OAuth2-compatible token endpoint (form-urlencoded: username + password)."""
+    user = crud.authenticate_user(db, email=form_data.username, password=form_data.password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {
+        "access_token": create_access_token({"sub": user.email}),
+        "token_type": "bearer",
+    }
+
+
 @app.post("/auth/login", response_model=schemas.Token)
 def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
+    """JSON login endpoint (kept for backward compatibility)."""
     user = crud.authenticate_user(db, email=credentials.email, password=credentials.password)
     if user is None:
         raise HTTPException(
@@ -47,7 +115,6 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     return {
         "access_token": create_access_token({"sub": user.email}),
         "token_type": "bearer",

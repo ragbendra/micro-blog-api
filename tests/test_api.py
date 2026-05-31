@@ -117,6 +117,32 @@ def test_login_rejects_wrong_password(client: TestClient):
     assert response.json()["detail"] == "Invalid email or password"
 
 
+def test_token_endpoint_returns_bearer_token(client: TestClient):
+    """The /token endpoint accepts form-urlencoded data (OAuth2 spec)."""
+    register_user(client, name="TokenUser", email="token@example.com")
+    response = client.post(
+        "/token",
+        data={"username": "token@example.com", "password": "secret123"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["token_type"] == "bearer"
+    assert data["access_token"]
+    assert set(data.keys()) == {"access_token", "token_type"}
+
+
+def test_token_endpoint_rejects_wrong_password(client: TestClient):
+    register_user(client, name="TokenFail", email="tokenfail@example.com")
+    response = client.post(
+        "/token",
+        data={"username": "tokenfail@example.com", "password": "wrong123"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
+
+
 def test_create_post_requires_authentication(client: TestClient):
     user_response = register_user(client, name="Eve", email="eve@example.com")
     user_id = user_response.json()["id"]
